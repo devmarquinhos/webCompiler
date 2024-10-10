@@ -1,6 +1,6 @@
 # Analisador de Códigos - Mini-Triangle
 
-Com esse compilador embutido no navegador, você pode fazer upload de um codigo mini triangle para fazer análise e verificar se há erros ou se o código está válido, também é possível checar aonde você errou. 
+Com esse compilador embutido no navegador, você pode fazer upload de um codigo mini triangle para fazer análise e verificar se há erros ou se o código está válido, também é possível checar aonde há erros. 
 
 ## Instrução de Uso
 
