@@ -1,0 +1,9 @@
+begin
+  var x := 10;
+  var y := 20;
+  outstring("Resultado: ");
+  if x < y then
+    outstring("x é menor que y");
+  else
+    outstring("x não é menor que y");
+end

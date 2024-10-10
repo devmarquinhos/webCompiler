@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Analisador Mini-Triangle</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f4f4f9;
+        color: #333;
+      }
+
+      .container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+
+      .half {
+        background-color: #fff;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 15px;
+        overflow-y: auto;
+        max-height: 400px;
+        white-space: pre-wrap;
+      }
+
+      .errors {
+        grid-column: span 2;
+        background-color: #fff;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 15px;
+        overflow-y: auto;
+        max-height: 150px;
+        white-space: pre-wrap;
+        margin-top: 20px;
+      }
+
+      .valid {
+        color: green;
+      }
+
+      .invalid {
+        color: red;
+      }
+
+      input[type="file"] {
+        margin-bottom: 20px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background-color: #fff;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Analisador Mini-Triangle</h1>
+    <input type="file" id="fileInput" />
+
+    <div class="container">
+      <div class="half" id="sourceCode"></div>
+      <div class="half" id="fileContent"></div>
+    </div>
+
+    <div class="errors" id="syntaxResult"></div>
+
+    <script>
+      document
+        .getElementById("fileInput")
+        .addEventListener("change", function (event) {
+          const file = event.target.files[0];
+          if (!file) {
+            return;
+          }
+
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            const content = e.target.result;
+            const lines = content.split("\n");
+            const numberedContent = lines
+              .map((line, index) => `${index + 1}: ${line}`)
+              .join("\n");
+            document.getElementById("sourceCode").textContent = numberedContent;
+
+            const { tokens, lexicalErrors } = lexicalAnalyzer(content);
+            const output = tokens
+              .map((token) => `TIPO = ${token.type}\tVALOR = ${token.value}`)
+              .join("\n");
+            document.getElementById("fileContent").textContent = output;
+
+            let errorMessages = lexicalErrors.join("\n");
+            const syntaxResultElement = document.getElementById("syntaxResult");
+
+            try {
+              parseProgram(tokens);
+              errorMessages += (errorMessages ? "\n" : "") + "Código válido";
+              syntaxResultElement.className = "errors valid";
+            } catch (error) {
+              errorMessages +=
+                (errorMessages ? "\n" : "") +
+                "Erro de análise sintática: " +
+                error.message;
+              syntaxResultElement.className = "errors invalid";
+            }
+
+            syntaxResultElement.textContent = errorMessages;
+          };
+          reader.readAsText(file);
+        });
+
+      function lexicalAnalyzer(input) {
+        const tokens = [];
+        const lexicalErrors = [];
+        const tokenPatterns = [
+          {
+            type: "KEYWORD",
+            regex:
+              /\b(begin|const|do|else|end|in|let|then|var|while|if|outstring)\b/g,
+          },
+          { type: "NUMBER", regex: /\b\d+(\.\d+)?\b/g },
+          { type: "IDENTIFIER", regex: /\b[a-zA-Z][a-zA-Z0-9]*\b/g },
+          { type: "OPERATOR", regex: /<=|>=|:=|==|!=|[+\-*/<>~]/g },
+          { type: "DELIMITER", regex: /[;:()]/g },
+          { type: "CHAR_LITERAL", regex: /'[^']'/g },
+          { type: "STRING", regex: /"([^"]*)"/g },
+        ];
+
+        let position = 0;
+        let line = 1;
+
+        while (position < input.length) {
+          let matchFound = false;
+
+          const whiteSpaceMatch = /^\s+/.exec(input.slice(position));
+          if (whiteSpaceMatch) {
+            const lines = whiteSpaceMatch[0].match(/\n/g);
+            if (lines) {
+              line += lines.length;
+            }
+            position += whiteSpaceMatch[0].length;
+            continue;
+          }
+
+          const commentMatch = /^(![^\n]*|\/\/[^\n]*)/.exec(
+            input.slice(position)
+          );
+          if (commentMatch) {
+            position += commentMatch[0].length;
+            continue;
+          }
+
+          for (const { type, regex } of tokenPatterns) {
+            regex.lastIndex = 0;
+            const match = regex.exec(input.slice(position));
+            if (match && match.index === 0) {
+              if (type === "STRING") {
+                tokens.push({ type, value: match[1], line });
+              } else {
+                tokens.push({ type, value: match[0], line });
+              }
+              position += match[0].length;
+              matchFound = true;
+              break;
+            }
+          }
+
+          if (!matchFound) {
+            lexicalErrors.push(
+              `Unexpected token at position ${position} (linha ${line}): '${input[position]}'`
+            );
+            position++;
+          }
+        }
+
+        return { tokens, lexicalErrors };
+      }
+
+      function parseProgram(tokens) {
+        let position = 0;
+
+        function currentToken() {
+          return tokens[position];
+        }
+
+        function consume(expectedType, expectedValue = null) {
+          if (
+            currentToken() &&
+            currentToken().type === expectedType &&
+            (expectedValue === null || currentToken().value === expectedValue)
+          ) {
+            console.log(
+              `Consumindo: ${currentToken().type} ${currentToken().value}`
+            );
+            position++;
+          } else {
+            const line = currentToken() ? currentToken().line : "desconhecida";
+            const foundType = currentToken() ? currentToken().type : "nenhum";
+            const foundValue = currentToken() ? currentToken().value : "nenhum";
+            throw new Error(
+              `Erro sintático na linha ${line}: esperado ${expectedType} ${
+                expectedValue ? `com valor ${expectedValue}` : ""
+              } mas encontrado ${foundType} ${foundValue}`
+            );
+          }
+        }
+
+        function parseBlock() {
+          consume("KEYWORD", "begin");
+          while (
+            currentToken() &&
+            !(
+              currentToken().type === "KEYWORD" &&
+              currentToken().value === "end"
+            )
+          ) {
+            parseStatement();
+          }
+          consume("KEYWORD", "end");
+        }
+
+        function parseStatement() {
+          if (!currentToken()) {
+            throw new Error(
+              "Erro sintático: declaração inesperada no fim do arquivo"
+            );
+          }
+
+          console.log(
+            `Parsing statement: ${currentToken().type} ${currentToken().value}`
+          );
+
+          if (
+            currentToken().type === "KEYWORD" &&
+            currentToken().value === "outstring"
+          ) {
+            consume("KEYWORD");
+            consume("DELIMITER", "(");
+            parseExpression();
+            consume("DELIMITER", ")");
+            consume("DELIMITER", ";");
+          } else if (
+            currentToken().type === "KEYWORD" &&
+            currentToken().value === "begin"
+          ) {
+            parseBlock();
+          } else if (
+            currentToken().type === "KEYWORD" &&
+            currentToken().value === "var"
+          ) {
+            consume("KEYWORD");
+            consume("IDENTIFIER");
+            if (
+              currentToken() &&
+              currentToken().type === "OPERATOR" &&
+              (currentToken().value === ":=" || currentToken().value === "~")
+            ) {
+              consume("OPERATOR");
+            } else {
+              const line = currentToken()
+                ? currentToken().line
+                : "desconhecida";
+              throw new Error(
+                `Erro sintático na linha ${line}: esperado operador de atribuição, mas encontrado ${
+                  currentToken().type
+                } ${currentToken().value}`
+              );
+            }
+            parseExpression();
+            consume("DELIMITER", ";");
+          } else if (
+            currentToken().type === "KEYWORD" &&
+            currentToken().value === "const"
+          ) {
+            consume("KEYWORD");
+            consume("IDENTIFIER");
+            if (
+              currentToken() &&
+              currentToken().type === "OPERATOR" &&
+              (currentToken().value === ":=" || currentToken().value === "~")
+            ) {
+              consume("OPERATOR");
+            } else {
+              const line = currentToken()
+                ? currentToken().line
+                : "desconhecida";
+              throw new Error(
+                `Erro sintático na linha ${line}: esperado operador de atribuição, mas encontrado ${
+                  currentToken().type
+                } ${currentToken().value}`
+              );
+            }
+            parseExpression();
+            consume("DELIMITER", ";");
+          } else if (currentToken().type === "IDENTIFIER") {
+            consume("IDENTIFIER");
+            if (
+              currentToken() &&
+              currentToken().type === "OPERATOR" &&
+              (currentToken().value === ":=" || currentToken().value === "~")
+            ) {
+              consume("OPERATOR");
+            } else {
+              const line = currentToken()
+                ? currentToken().line
+                : "desconhecida";
+              throw new Error(
+                `Erro sintático na linha ${line}: esperado operador de atribuição, mas encontrado ${
+                  currentToken().type
+                } ${currentToken().value}`
+              );
+            }
+            parseExpression();
+            consume("DELIMITER", ";");
+          } else if (
+            currentToken().type === "KEYWORD" &&
+            currentToken().value === "while"
+          ) {
+            consume("KEYWORD");
+            parseExpression();
+            consume("KEYWORD", "do");
+            parseStatement();
+          } else if (
+            currentToken().type === "KEYWORD" &&
+            currentToken().value === "if"
+          ) {
+            consume("KEYWORD");
+            parseExpression();
+            consume("KEYWORD", "then");
+            parseStatement();
+            if (
+              currentToken() &&
+              currentToken().type === "KEYWORD" &&
+              currentToken().value === "else"
+            ) {
+              consume("KEYWORD");
+              parseStatement();
+            }
+          } else {
+            const line = currentToken() ? currentToken().line : "desconhecida";
+            throw new Error(
+              `Erro sintático na linha ${line}: declaração inválida iniciada com ${
+                currentToken().type
+              } ${currentToken().value}`
+            );
+          }
+        }
+
+        function parseExpression() {
+          if (!currentToken()) {
+            throw new Error(
+              "Erro sintático: expressão inesperada no fim do arquivo"
+            );
+          }
+
+          if (currentToken().type === "STRING") {
+            consume("STRING");
+          } else {
+            parseSimpleExpression();
+            if (
+              currentToken() &&
+              currentToken().type === "OPERATOR" &&
+              ["<", ">", "<=", ">=", "==", "!=", "~"].includes(
+                currentToken().value
+              )
+            ) {
+              consume("OPERATOR");
+              parseSimpleExpression();
+            }
+          }
+        }
+
+        function parseSimpleExpression() {
+          if (!currentToken()) {
+            throw new Error(
+              "Erro sintático: expressão inesperada no fim do arquivo"
+            );
+          }
+
+          parseTerm();
+          while (
+            currentToken() &&
+            currentToken().type === "OPERATOR" &&
+            ["+", "-"].includes(currentToken().value)
+          ) {
+            consume("OPERATOR");
+            parseTerm();
+          }
+        }
+
+        function parseTerm() {
+          if (!currentToken()) {
+            throw new Error(
+              "Erro sintático: termo inesperado no fim do arquivo"
+            );
+          }
+
+          parseFactor();
+          while (
+            currentToken() &&
+            currentToken().type === "OPERATOR" &&
+            ["*", "/"].includes(currentToken().value)
+          ) {
+            consume("OPERATOR");
+            parseFactor();
+          }
+        }
+
+        function parseFactor() {
+          if (!currentToken()) {
+            throw new Error(
+              "Erro sintático: fator inesperado no fim do arquivo"
+            );
+          }
+
+          if (
+            currentToken().type === "OPERATOR" &&
+            currentToken().value === "~"
+          ) {
+            consume("OPERATOR", "~");
+            parseFactor();
+          } else if (
+            currentToken().type === "IDENTIFIER" ||
+            currentToken().type === "NUMBER"
+          ) {
+            consume(currentToken().type);
+          } else if (
+            currentToken().type === "DELIMITER" &&
+            currentToken().value === "("
+          ) {
+            consume("DELIMITER", "(");
+            parseExpression();
+            consume("DELIMITER", ")");
+          } else {
+            const line = currentToken() ? currentToken().line : "desconhecida";
+            throw new Error(
+              `Erro sintático na linha ${line}: expressão inválida iniciada com ${
+                currentToken().type
+              } ${currentToken().value}`
+            );
+          }
+        }
+
+        function parse() {
+          while (position < tokens.length) {
+            parseStatement();
+          }
+        }
+
+        try {
+          parse();
+        } catch (error) {
+          throw error;
+        }
+      }
+    </script>
+  </body>
+</html>
